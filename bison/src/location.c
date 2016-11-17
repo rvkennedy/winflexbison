@@ -97,15 +97,13 @@ location_compute (location *loc, boundary *cur, char const *token, size_t size)
 
 
 unsigned
-location_print (location loc, FILE *out)
+location_range_print (location loc, FILE *out)
 {
   unsigned res = 0;
   int end_col = 0 != loc.end.column ? loc.end.column - 1 : 0;
-  res += fprintf (out, "%s",
-                  quotearg_n_style (3, escape_quoting_style, loc.start.file));
   if (0 <= loc.start.line)
     {
-      res += fprintf (out, ":%d", loc.start.line);
+      res += fprintf (out, "%d", loc.start.line);
       if (0 <= loc.start.column)
         res += fprintf (out, ".%d", loc.start.column);
     }
@@ -116,7 +114,7 @@ location_print (location loc, FILE *out)
                                         loc.end.file));
       if (0 <= loc.end.line)
         {
-          res += fprintf (out, ":%d", loc.end.line);
+          res += fprintf (out, "%d", loc.end.line);
           if (0 <= end_col)
             res += fprintf (out, ".%d", end_col);
         }
@@ -133,6 +131,47 @@ location_print (location loc, FILE *out)
         res += fprintf (out, "-%d", end_col);
     }
 
+  return res;
+}
+/*
+Visual studio format is:
+
+        (line) or (line-line) or (line-col) or (line,col-col) or (line,col,line,col)
+*/
+
+unsigned
+location_print (location loc, FILE *out)
+{
+  unsigned res = 0;
+  int end_col = 0 != loc.end.column ? loc.end.column - 1 : 0;
+  res += fprintf (out, "%s",
+                  quotearg_n_style (3, escape_quoting_style, loc.start.file));
+  if(0 <= loc.start.line||loc.start.file != loc.end.file||0 <= loc.end.line)
+      res += fprintf (out, "(");
+  if (0 <= loc.start.line)
+    {
+      res += fprintf (out, "%d", loc.start.line);
+      if (0 <= loc.start.column)
+        res += fprintf (out, ",%d", loc.start.column);
+    }
+  if (loc.start.file != loc.end.file)
+    {
+		// Ignore: Visual Studio can't cope with this case.
+    }
+ /* else if (0 <= loc.end.line)
+    {
+      if (loc.start.line < loc.end.line)
+        {
+          res += fprintf (out, "-%d", loc.end.line);
+          if (0 <= end_col)
+            res += fprintf (out, ",%d", end_col);
+        }
+      else if (0 <= end_col && loc.start.column < end_col)
+        res += fprintf (out, "-%d", end_col);
+    }
+  */
+  if(0 <= loc.start.line||loc.start.file != loc.end.file||0 <= loc.end.line)
+      res += fprintf (out, ")");
   return res;
 }
 
