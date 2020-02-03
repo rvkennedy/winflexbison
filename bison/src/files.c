@@ -1,7 +1,7 @@
 /* Open and close files for Bison.
 
-   Copyright (C) 1984, 1986, 1989, 1992, 2000-2015 Free Software
-   Foundation, Inc.
+   Copyright (C) 1984, 1986, 1989, 1992, 2000-2015, 2018-2019 Free
+   Software Foundation, Inc.
 
    This file is part of Bison, the GNU Compiler Compiler.
 
@@ -21,11 +21,13 @@
 #include <config.h>
 #include "system.h"
 
+//#include <configmake.h> /* PKGDATADIR */
 #include <error.h>
 #include <dirname.h>
 #include <get-errno.h>
 #include <quote.h>
 #include <quotearg.h>
+#include <relocatable.h> /* relocate2 */
 #include <stdio-safer.h>
 #include <xstrndup.h>
 
@@ -43,11 +45,13 @@
 
 char const *spec_outfile = NULL;       /* for -o. */
 char const *spec_file_prefix = NULL;   /* for -b. */
+location spec_file_prefix_loc = EMPTY_LOCATION_INIT;
 char const *spec_name_prefix = NULL;   /* for -p. */
+location spec_name_prefix_loc = EMPTY_LOCATION_INIT;
 char *spec_verbose_file = NULL;  /* for --verbose. */
 char *spec_graph_file = NULL;    /* for -g. */
 char *spec_xml_file = NULL;      /* for -x. */
-char *spec_defines_file = NULL;  /* for --defines. */
+char *spec_header_file = NULL;  /* for --defines. */
 char *parser_file_name;
 
 /* All computed output file names.  */
@@ -64,7 +68,6 @@ static generated_file *generated_files = NULL;
 static int generated_files_size = 0;
 
 uniqstr grammar_file = NULL;
-uniqstr current_file = NULL;
 
 /* If --output=dir/foo.c was specified,
    DIR_PREFIX is 'dir/' and ALL_BUT_EXT and ALL_BUT_TAB_EXT are 'dir/foo'.
@@ -102,8 +105,8 @@ concat2 (char const *str1, char const *str2)
   size_t len = strlen (str1) + strlen (str2);
   char *res = xmalloc (len + 1);
   char *cp;
-  cp = strcat (res, str1);
-  cp = strcat (res, str2);
+  cp = _stpcpy (res, str1);
+  cp = _stpcpy (cp, str2);
   return res;
 }
 
@@ -115,14 +118,13 @@ concat2 (char const *str1, char const *str2)
 FILE *
 xfopen (const char *name, const char *mode)
 {
-  FILE *ptr;
-
-  ptr = fopen (name, mode);
-  if (!ptr)
+  //FILE *res = fopen_safer (name, mode);
+  FILE *res = fopen (name, mode);
+  if (!res)
     error (EXIT_FAILURE, get_errno (),
            _("%s: cannot open"), quotearg_colon (name));
 
-  return ptr;
+  return res;
 }
 
 /*-------------------------------------------------------------.
@@ -184,7 +186,7 @@ static void
 compute_exts_from_src (const char *ext)
 {
   /* We use this function when the user specifies `-o' or `--output',
-     so the extenions must be computed unconditionally from the file name
+     so the extensions must be computed unconditionally from the file name
      given by this option.  */
   src_extension = xstrdup (ext);
   header_extension = xstrdup (ext);
@@ -244,19 +246,18 @@ file_name_split (const char *file_name,
     }
 }
 
+/* Compute ALL_BUT_EXT and ALL_BUT_TAB_EXT from SPEC_OUTFILE or
+   GRAMMAR_FILE.
+
+   The precise -o name will be used for FTABLE.  For other output
+   files, remove the ".c" or ".tab.c" suffix.  */
 
 static void
 compute_file_name_parts (void)
 {
-  const char *base, *tab, *ext;
-
-  /* Compute ALL_BUT_EXT and ALL_BUT_TAB_EXT from SPEC_OUTFILE
-     or GRAMMAR_FILE.
-
-     The precise -o name will be used for FTABLE.  For other output
-     files, remove the ".c" or ".tab.c" suffix.  */
   if (spec_outfile)
     {
+      const char *base, *tab, *ext;
       file_name_split (spec_outfile, &base, &tab, &ext);
       dir_prefix = xstrndup (spec_outfile, base - spec_outfile);
 
@@ -276,6 +277,7 @@ compute_file_name_parts (void)
     }
   else
     {
+      const char *base, *tab, *ext;
       file_name_split (grammar_file, &base, &tab, &ext);
 
       if (spec_file_prefix)
@@ -286,7 +288,7 @@ compute_file_name_parts (void)
                       last_component (spec_file_prefix) - spec_file_prefix);
           all_but_tab_ext = xstrdup (spec_file_prefix);
         }
-      else if (yacc_flag)
+      else if (! location_empty (yacc_loc))
         {
           /* If --yacc, then the output is 'y.tab.c'.  */
           dir_prefix = xstrdup ("");
@@ -307,7 +309,7 @@ compute_file_name_parts (void)
         all_but_ext = xstrdup (all_but_tab_ext);
 
       /* Compute the extensions from the grammar file name.  */
-      if (ext && !yacc_flag)
+      if (ext && location_empty (yacc_loc))
         compute_exts_from_gf (ext);
     }
 }
@@ -334,14 +336,15 @@ compute_output_file_names (void)
 
   if (defines_flag)
     {
-      if (! spec_defines_file)
-        spec_defines_file = concat2 (all_but_ext, header_extension);
+      if (! spec_header_file)
+        spec_header_file = concat2 (all_but_ext, header_extension);
     }
 
   if (graph_flag)
     {
       if (! spec_graph_file)
-        spec_graph_file = concat2 (all_but_tab_ext, ".dot");
+        spec_graph_file = concat2 (all_but_tab_ext,
+                                   304 <= required_version ? ".gv" : ".dot");
       output_file_name_check (&spec_graph_file, false);
     }
 
@@ -375,16 +378,13 @@ output_file_name_check (char **file_name, bool source)
       conflict = true;
     }
   else
-    {
-      int i;
-      for (i = 0; i < generated_files_size; i++)
-        if (STREQ (generated_files[i].name, *file_name))
-          {
-            complain (NULL, Wother, _("conflicting outputs to file %s"),
-                      quote (generated_files[i].name));
-            conflict = true;
-          }
-    }
+    for (int i = 0; i < generated_files_size; i++)
+      if (STREQ (generated_files[i].name, *file_name))
+        {
+          complain (NULL, Wother, _("conflicting outputs to file %s"),
+                    quote (generated_files[i].name));
+          conflict = true;
+        }
   if (conflict)
     {
       free (*file_name);
@@ -402,11 +402,60 @@ output_file_name_check (char **file_name, bool source)
 void
 unlink_generated_sources (void)
 {
-  int i;
-  for (i = 0; i < generated_files_size; i++)
+  for (int i = 0; i < generated_files_size; i++)
     if (generated_files[i].is_source)
       /* Ignore errors.  The file might not even exist.  */
-      unlink (generated_files[i].name);
+      _unlink (generated_files[i].name);
+}
+
+/* Memory allocated by relocate2, to free.  */
+static char *relocate_buffer = NULL;
+
+extern const char* get_app_path();
+
+char* get_local_pkgdatadir()
+{
+	const char* program_path = 0;
+	const char* dir = 0;
+	const char* last_divider = 0;
+	char* local_pkgdatadir = NULL;
+	size_t dir_len = 0;
+	size_t local_pkgdatadir_len = 0;
+
+	program_path = dir = get_app_path();
+
+	while (*dir)
+	{
+		if (*dir == '\\' || *dir == '/')
+			last_divider = dir;
+		++dir;
+	}
+
+	if (!last_divider)
+		return PKGDATADIR;
+
+	++last_divider;
+
+	dir_len = last_divider - program_path;
+	local_pkgdatadir_len = dir_len + strlen(PKGDATADIR);
+	local_pkgdatadir = (char*)malloc((local_pkgdatadir_len + 1) * sizeof(char));
+	strncpy(local_pkgdatadir, program_path, dir_len);
+	strcpy(&local_pkgdatadir[dir_len], PKGDATADIR);
+
+	return local_pkgdatadir;
+}
+
+char const *
+pkgdatadir (void)
+{
+  if (relocate_buffer)
+    return relocate_buffer;
+  else
+    {
+      char const *cp = getenv ("BISON_PKGDATADIR");
+//	  return cp ? cp : relocate2(PKGDATADIR, &relocate_buffer);
+	  return cp ? cp : (relocate_buffer = get_local_pkgdatadir());
+    }
 }
 
 void
@@ -416,13 +465,11 @@ output_file_names_free (void)
   free (spec_verbose_file);
   free (spec_graph_file);
   free (spec_xml_file);
-  free (spec_defines_file);
+  free (spec_header_file);
   free (parser_file_name);
   free (dir_prefix);
-  {
-    int i;
-    for (i = 0; i < generated_files_size; i++)
-      free (generated_files[i].name);
-  }
+  for (int i = 0; i < generated_files_size; i++)
+    free (generated_files[i].name);
   free (generated_files);
+  free (relocate_buffer);
 }

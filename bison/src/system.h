@@ -1,6 +1,7 @@
 /* System-dependent definitions for Bison.
 
-   Copyright (C) 2000-2007, 2009-2015 Free Software Foundation, Inc.
+   Copyright (C) 2000-2007, 2009-2015, 2018-2019 Free Software
+   Foundation, Inc.
 
    This program is free software: you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -18,7 +19,7 @@
 #ifndef BISON_SYSTEM_H
 # define BISON_SYSTEM_H
 
-/* flex 2.5.31 gratutiously defines macros like INT8_MIN.  But this
+/* flex 2.5.31 gratuitously defines macros like INT8_MIN.  But this
    runs afoul of pre-C99 compilers that have <inttypes.h> or
    <stdint.h>, which are included below if available.  It also runs
    afoul of pre-C99 compilers that define these macros in <limits.h>.  */
@@ -72,6 +73,20 @@ typedef size_t uintptr_t;
 # include <verify.h>
 # include <xalloc.h>
 #include <stdio.h>
+#include <stdint.h>
+
+
+/* See https://lists.gnu.org/archive/html/bug-bison/2019-10/msg00061.html. */
+# if defined __GNUC__ && ! defined __clang__ && ! defined __ICC && __GNUC__ < 5
+#  define IGNORE_TYPE_LIMITS_BEGIN \
+     _Pragma ("GCC diagnostic push") \
+     _Pragma ("GCC diagnostic ignored \"-Wtype-limits\"")
+#  define IGNORE_TYPE_LIMITS_END \
+     _Pragma ("GCC diagnostic pop")
+# else
+#  define IGNORE_TYPE_LIMITS_BEGIN
+#  define IGNORE_TYPE_LIMITS_END
+# endif
 
 
 /*-----------------.
@@ -258,5 +273,7 @@ typedef size_t uintptr_t;
 #  define DMALLOC_FUNC_CHECK
 #  include <dmalloc.h>
 # endif /* WITH_DMALLOC */
+
+int strverscmp(const char *s1, const char *s2);
 
 #endif  /* ! BISON_SYSTEM_H */

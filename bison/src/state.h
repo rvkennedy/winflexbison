@@ -1,7 +1,7 @@
 /* Type definitions for the finite state machine for Bison.
 
-   Copyright (C) 1984, 1989, 2000-2004, 2007, 2009-2015 Free Software
-   Foundation, Inc.
+   Copyright (C) 1984, 1989, 2000-2004, 2007, 2009-2015, 2018-2019 Free
+   Software Foundation, Inc.
 
    This file is part of Bison, the GNU Compiler Compiler.
 
@@ -51,11 +51,11 @@
    lookahead token alone).  When the states are generated, these
    actions are represented in two other lists.
 
-   Each transition structure describes the possible transitions out
-   of one state, the state whose number is in the number field.  Each
-   contains a vector of numbers of the states that transitions can go
-   to.  The accessing_symbol fields of those states' cores say what
-   kind of input leads to them.
+   Each transition structure describes the possible transitions out of
+   one state (there are NUM of them).  Each contains a vector of
+   numbers of the states that transitions can go to.  The
+   accessing_symbol fields of those states' cores say what kind of
+   input leads to them.
 
    A transition to state zero should be ignored: conflict resolution
    deletes transitions by having them point to zero.
@@ -80,6 +80,8 @@
 
 #ifndef STATE_H_
 # define STATE_H_
+
+# include <stdbool.h>
 
 # include <bitset.h>
 
@@ -110,14 +112,14 @@ typedef struct state state;
 
 typedef struct
 {
-  int num;
+  int num;            /** Size of destination STATES.  */
   state *states[1];
 } transitions;
 
 
 /* What is the symbol labelling the transition to
    TRANSITIONS->states[Num]?  Can be a token (amongst which the error
-   token), or non terminals in case of gotos.  */
+   token), or nonterminals in case of gotos.  */
 
 # define TRANSITION_SYMBOL(Transitions, Num) \
   (Transitions->states[Num]->accessing_symbol)
@@ -135,7 +137,7 @@ typedef struct
 /* Is the TRANSITIONS->states[Num] labelled by the error token?  */
 
 # define TRANSITION_IS_ERROR(Transitions, Num) \
-  (TRANSITION_SYMBOL (Transitions, Num) == errtoken->number)
+  (TRANSITION_SYMBOL (Transitions, Num) == errtoken->content->number)
 
 /* When resolving a SR conflicts, if the reduction wins, the shift is
    disabled.  */
@@ -148,7 +150,7 @@ typedef struct
 
 
 /* Iterate over each transition over a token (shifts).  */
-# define FOR_EACH_SHIFT(Transitions, Iter)                       \
+# define FOR_EACH_SHIFT(Transitions, Iter)                      \
   for (Iter = 0;                                                \
        Iter < Transitions->num                                  \
          && (TRANSITION_IS_DISABLED (Transitions, Iter)         \
@@ -157,9 +159,9 @@ typedef struct
     if (!TRANSITION_IS_DISABLED (Transitions, Iter))
 
 
-/* Return the state such SHIFTS contain a shift/goto to it on SYM.
-   Abort if none found.  */
-struct state *transitions_to (transitions *shifts, symbol_number sym);
+/* The destination of the transition (shift/goto) from state S on
+   label SYM (term or nterm).  Abort if none found.  */
+struct state *transitions_to (state *s, symbol_number sym);
 
 
 /*-------.
@@ -208,9 +210,9 @@ struct state
      store in this member a reference to the node containing each state.  */
   struct state_list *state_list;
 
-  /* If non-zero, then no lookahead sets on reduce actions are needed to
-     decide what to do in state S.  */
-  char consistent;
+  /* Whether no lookahead sets on reduce actions are needed to decide
+     what to do in state S.  */
+  bool consistent;
 
   /* If some conflicts were solved thanks to precedence/associativity,
      a human readable description of the resolution.  */
@@ -231,21 +233,26 @@ state *state_new (symbol_number accessing_symbol,
                   size_t core_size, item_number *core);
 state *state_new_isocore (state const *s);
 
-/* Set the transitions of STATE.  */
-void state_transitions_set (state *s, int num, state **trans);
+/* Record that from S we can reach all the DST states (NUM of them).  */
+void state_transitions_set (state *s, int num, state **dst);
+
+/* Print the transitions of state s for debug.  */
+void state_transitions_print (const state *s, FILE *out);
 
 /* Set the reductions of STATE.  */
 void state_reductions_set (state *s, int num, rule **reds);
 
-int state_reduction_find (state *s, rule *r);
+/* The index of the reduction of state S that corresponds to rule R.
+   Aborts if there is no reduction of R in S.  */
+int state_reduction_find (state *s, rule const *r);
 
 /* Set the errs of STATE.  */
 void state_errs_set (state *s, int num, symbol **errors);
 
 /* Print on OUT all the lookahead tokens such that this STATE wants to
    reduce R.  */
-void state_rule_lookahead_tokens_print (state *s, rule *r, FILE *out);
-void state_rule_lookahead_tokens_print_xml (state *s, rule *r,
+void state_rule_lookahead_tokens_print (state *s, rule const *r, FILE *out);
+void state_rule_lookahead_tokens_print_xml (state *s, rule const *r,
                                             FILE *out, int level);
 
 /* Create/destroy the states hash table.  */
