@@ -1,7 +1,7 @@
 /* Top level entry point of Bison.
 
    Copyright (C) 1984, 1986, 1989, 1992, 1995, 2000-2002, 2004-2015,
-   2018-2019 Free Software Foundation, Inc.
+   2018-2020 Free Software Foundation, Inc.
 
    This file is part of Bison, the GNU Compiler Compiler.
 
@@ -18,6 +18,9 @@
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
+#include <io.h>
+#include <fcntl.h>
+
 #include <config.h>
 #include "system.h"
 
@@ -33,10 +36,12 @@
 
 #include "complain.h"
 #include "conflicts.h"
+#include "counterexample.h"
 #include "derives.h"
 #include "files.h"
 #include "fixits.h"
 #include "getargs.h"
+#include "glyphs.h"
 #include "gram.h"
 #include "ielr.h"
 #include "lalr.h"
@@ -44,6 +49,7 @@
 #include "muscle-tab.h"
 #include "nullable.h"
 #include "output.h"
+#include "parse-gram.h"
 #include "print-graph.h"
 #include "print-xml.h"
 #include "print.h"
@@ -81,8 +87,18 @@ main (int argc, char *argv[])
       set_quoting_style (&quote_quoting_options, locale_quoting_style);
   }
 
+  {
+      char const* cp = getenv("WINFLEXBISON_BINARY_OUTPUT");
+      if (cp && STREQ(cp, "Y"))
+      {
+          (void)_setmode(_fileno(stdout), _O_BINARY);
+          (void)_setmode(_fileno(stderr), _O_BINARY);
+      }
+  }
+
   atexit (close_stdout);
 
+  glyphs_init ();
   uniqstrs_new ();
   muscle_init ();
   complain_init ();
@@ -144,6 +160,9 @@ main (int argc, char *argv[])
       conflicts_update_state_numbers (old_to_new, nstates_old);
       free (old_to_new);
     }
+  if (report_flag & report_cex
+      || warning_is_enabled (Wcounterexamples))
+    counterexample_init ();
   conflicts_print ();
   timevar_pop (tv_conflicts);
 
@@ -217,11 +236,15 @@ main (int argc, char *argv[])
   reduce_free ();
   conflicts_free ();
   grammar_free ();
+  counterexample_free ();
   output_file_names_free ();
 
-  /* The scanner memory cannot be released right after parsing, as it
-     contains things such as user actions, prologue, epilogue etc.  */
+  /* The scanner and parser memory cannot be released right after
+     parsing, as it contains things such as user actions, prologue,
+     epilogue etc.  */
   gram_scanner_free ();
+  parser_free ();
+
   muscle_free ();
   code_scanner_free ();
   skel_scanner_free ();

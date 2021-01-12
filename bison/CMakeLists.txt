@@ -21,8 +21,11 @@ list(REMOVE_ITEM SOURCE_FILES "${CMAKE_CURRENT_SOURCE_DIR}/src/scan-skel.c")
 add_executable(${PROJECT_NAME} 
    ${SOURCE_FILES}
 )
+add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_CURRENT_SOURCE_DIR}/data" "$<TARGET_FILE_DIR:${PROJECT_NAME}>/data"
+)
 
 target_include_directories(${PROJECT_NAME} PRIVATE "src")
 target_include_directories(${PROJECT_NAME} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
 
-target_link_libraries(${PROJECT_NAME} common_lib kernel32.lib user32.lib)
+target_link_libraries(${PROJECT_NAME} winflexbison_common kernel32.lib user32.lib)
