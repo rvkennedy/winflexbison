@@ -1,7 +1,7 @@
 /* Data definitions for internal representation of Bison's input.
 
-   Copyright (C) 1984, 1986, 1989, 1992, 2001-2007, 2009-2015 Free
-   Software Foundation, Inc.
+   Copyright (C) 1984, 1986, 1989, 1992, 2001-2007, 2009-2015, 2018-2019
+   Free Software Foundation, Inc.
 
    This file is part of Bison, the GNU Compiler Compiler.
 
@@ -75,7 +75,7 @@
 
    RULES[R].line -- the line where R was defined.
 
-   RULES[R].useful -- true iff the rule is used (i.e., false if thrown
+   RULES[R].useful -- whether the rule is used (i.e., false if thrown
    away by reduce).
 
    The right hand side is stored as symbol numbers in a portion of
@@ -115,7 +115,7 @@ extern int nvars;
 typedef int item_number;
 # define ITEM_NUMBER_MAX INT_MAX
 extern item_number *ritem;
-extern unsigned int nritems;
+extern int nritems;
 
 /* There is weird relationship between OT1H item_number and OTOH
    symbol_number and rule_number: we store the latter in
@@ -146,7 +146,6 @@ item_number_is_symbol_number (item_number i)
 /* Rule numbers.  */
 typedef int rule_number;
 # define RULE_NUMBER_MAX INT_MAX
-extern rule_number nrules;
 
 static inline item_number
 rule_number_as_item_number (rule_number r)
@@ -166,6 +165,7 @@ item_number_is_rule_number (item_number i)
   return i < 0;
 }
 
+
 /*--------.
 | Rules.  |
 `--------*/
@@ -180,55 +180,79 @@ typedef struct
      except if some rules are useless.  */
   rule_number number;
 
-  symbol *lhs;
+  sym_content *lhs;
   item_number *rhs;
 
   /* This symbol provides both the associativity, and the precedence. */
-  symbol *prec;
+  sym_content *prec;
 
   int dprec;
   int merger;
 
   /* This symbol was attached to the rule via %prec. */
-  symbol *precsym;
+  sym_content *precsym;
 
+  /* Location of the rhs.  */
   location location;
   bool useful;
   bool is_predicate;
 
+  /* Counts of the numbers of expected conflicts for this rule, or -1 if none
+     given. */
+  int expected_sr_conflicts;
+  int expected_rr_conflicts;
+
   const char *action;
-  location action_location;
+  location action_loc;
 } rule;
 
+/* The used rules (size NRULES).  */
 extern rule *rules;
+extern rule_number nrules;
+
+/* Get the rule associated to this item.  ITEM points inside RITEM.  */
+rule const *item_rule (item_number const *item);
+
+/* Pretty-print this ITEM (as in the report).  ITEM points inside
+   RITEM.  PREVIOUS_RULE is used to see if the lhs is common, in which
+   case LHS is factored.  Passing NULL is fine.  */
+void item_print (item_number *item, rule const *previous_rule,
+                 FILE *out);
 
 /* A function that selects a rule.  */
 typedef bool (*rule_filter) (rule const *);
 
-/* Return true IFF the rule has a 'number' smaller than NRULES.  That is, it is
-   useful in the grammar.  */
+/* Whether the rule has a 'number' smaller than NRULES.  That is, it
+   is useful in the grammar.  */
 bool rule_useful_in_grammar_p (rule const *r);
 
-/* Return true IFF the rule has a 'number' higher than NRULES.  That is, it is
+/* Whether the rule has a 'number' higher than NRULES.  That is, it is
    useless in the grammar.  */
 bool rule_useless_in_grammar_p (rule const *r);
 
-/* Return true IFF the rule is not flagged as useful but is useful in the
+/* Whether the rule is not flagged as useful but is useful in the
    grammar.  In other words, it was discarded because of conflicts.  */
 bool rule_useless_in_parser_p (rule const *r);
+
+/* Whether the rule has a single RHS, and no user action. */
+bool rule_useless_chain_p (rule const *r);
 
 /* Print this rule's number and lhs on OUT.  If a PREVIOUS_LHS was
    already displayed (by a previous call for another rule), avoid
    useless repetitions.  */
-void rule_lhs_print (rule const *r, symbol const *previous_lhs, FILE *out);
+void rule_lhs_print (rule const *r, sym_content const *previous_lhs,
+                     FILE *out);
 void rule_lhs_print_xml (rule const *r, FILE *out, int level);
 
-/* Return the length of the RHS.  */
+/* The length of the RHS.  */
 size_t rule_rhs_length (rule const *r);
 
 /* Print this rule's RHS on OUT.  */
 void rule_rhs_print (rule const *r, FILE *out);
 
+/* Print this rule on OUT.  If a PREVIOUS_RULE was already displayed,
+   avoid useless repetitions of their LHS. */
+void rule_print (rule const *r, rule const *prev_rule, FILE *out);
 
 
 
@@ -246,7 +270,7 @@ extern int max_user_token_number;
 /* Dump RITEM for traces. */
 void ritem_print (FILE *out);
 
-/* Return the size of the longest rule RHS.  */
+/* The size of the longest rule RHS.  */
 size_t ritem_longest_rhs (void);
 
 /* Print the grammar's rules that match FILTER on OUT under TITLE.  */
@@ -269,5 +293,9 @@ void grammar_rules_useless_report (const char *message);
 
 /* Free the packed grammar. */
 void grammar_free (void);
+
+/* The version %required by the grammar file, as an int (100 * major +
+   minor).  0 if unspecified.  */
+extern int required_version;
 
 #endif /* !GRAM_H_ */
